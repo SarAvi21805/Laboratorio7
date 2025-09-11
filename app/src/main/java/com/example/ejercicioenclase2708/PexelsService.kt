@@ -1,15 +1,15 @@
 package com.example.ejercicioenclase2708
 
-private const val BASE_URL = "https://api.pexels.com/"
-
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
-import com.zezziapp.testapp.BuildConfig
+import com.example.ejercicioenclase2708.BuildConfig
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
+
+private const val BASE_URL = "https://api.pexels.com/"
 
 object PexelsService {
 
@@ -21,7 +21,7 @@ object PexelsService {
     }
 
     private val logger = HttpLoggingInterceptor().apply {
-        level = HttpLoggingInterceptor.Level.BASIC
+        level = HttpLoggingInterceptor.Level.BODY // Cambiado a BODY para ver más detalles
     }
 
     private val client = OkHttpClient.Builder()
@@ -35,7 +35,7 @@ object PexelsService {
 
     val api: PexelsApi = Retrofit.Builder()
         .baseUrl(BASE_URL)
-        .addConverterFactory(MoshiConverterFactory.create(moshi)) // <-- use configured Moshi
+        .addConverterFactory(MoshiConverterFactory.create(moshi))
         .client(client)
         .build()
         .create(PexelsApi::class.java)

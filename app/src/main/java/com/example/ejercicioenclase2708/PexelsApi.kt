@@ -11,4 +11,17 @@ interface PexelsApi {
         @Query("page") page: Int = 1,
         @Query("per_page") perPage: Int = 20
     ): Call<PexelsResponse>
+
+    @GET("v1/search")
+    fun searchPhotos(
+        @Query("query") query: String,
+        @Query("page") page: Int = 1,
+        @Query("per_page") perPage: Int = 20
+    ): Call<PexelsResponse>
+
+    // PARA LA PANTALLA DE DETALLES
+    @GET("v1/photos/{id}")
+    fun getPhoto(
+        @retrofit2.http.Path("id") id: String
+    ): Call<PexelsPhoto>
 }
