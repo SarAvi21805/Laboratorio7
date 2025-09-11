@@ -36,7 +36,6 @@ fun ProfileScreen(
                 .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Aquí puedes usar un AsyncImage con una URL estática o un Icon
             Icon(
                 imageVector = Icons.Default.AccountCircle,
                 contentDescription = "Avatar",
