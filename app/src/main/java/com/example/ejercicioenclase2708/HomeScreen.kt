@@ -29,7 +29,7 @@ fun HomeScreen(
     onPhotoClick: (String) -> Unit,
     onProfileClick: () -> Unit
 ) {
-    var query by rememberSaveable { mutableStateOf("Nature") }
+    var query by rememberSaveable { mutableStateOf("") }
     var photos by remember { mutableStateOf<List<PexelsPhoto>>(emptyList()) }
     var isLoading by rememberSaveable { mutableStateOf(false) }
     var error by rememberSaveable { mutableStateOf<String?>(null) }

@@ -19,7 +19,7 @@ android {
 
     defaultConfig {
         applicationId = "com.example.ejercicioenclase2708"
-        minSdk = 34
+        minSdk = 33 //Modificado para poder probar la aplicación en un dispositivo físico
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"

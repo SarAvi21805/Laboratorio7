@@ -19,7 +19,7 @@ interface PexelsApi {
         @Query("per_page") perPage: Int = 20
     ): Call<PexelsResponse>
 
-    // PARA LA PANTALLA DE DETALLES
+    // Pantalla "Detalles"
     @GET("v1/photos/{id}")
     fun getPhoto(
         @retrofit2.http.Path("id") id: String
