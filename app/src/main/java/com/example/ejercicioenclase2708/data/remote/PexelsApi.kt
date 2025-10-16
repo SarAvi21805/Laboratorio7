@@ -1,8 +1,9 @@
-package com.example.ejercicioenclase2708
+package com.example.ejercicioenclase2708.data.remote
 
 import retrofit2.Call
 import retrofit2.http.GET
 import retrofit2.http.Query
+import retrofit2.http.Path
 
 
 interface PexelsApi {
@@ -24,4 +25,7 @@ interface PexelsApi {
     fun getPhoto(
         @retrofit2.http.Path("id") id: String
     ): Call<PexelsPhoto>
+
+    @GET("v1/photos/{id}")
+    fun getPhotoById(@Path("id") id: Long): Call<PexelsPhoto>
 }
