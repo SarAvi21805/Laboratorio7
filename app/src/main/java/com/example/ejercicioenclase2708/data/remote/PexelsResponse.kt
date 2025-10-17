@@ -1,4 +1,4 @@
-package com.example.ejercicioenclase2708
+package com.example.ejercicioenclase2708.data.remote
 
 import com.squareup.moshi.Json
 
