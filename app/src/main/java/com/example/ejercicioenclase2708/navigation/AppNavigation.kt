@@ -17,8 +17,20 @@ fun AppNavigation(
 ) {
     val navController = rememberNavController()
     NavHost(navController = navController, startDestination = "home") {
-        composable("home") {
+        /*composable("home") {
             HomeScreen(navController = navController)
+        }*/
+        composable(
+            route = "home?author={authorName}",
+            arguments = listOf(navArgument("authorName") {
+                type = NavType.StringType
+                nullable = true
+            })
+        ) { backStackEntry ->
+            // Extracción del argumento
+            val authorName = backStackEntry.arguments?.getString("authorName")
+            // Se pasa a HomeScreen
+            HomeScreen(navController = navController, authorToFilter = authorName)
         }
         composable(
             route = "details/{photoId}",

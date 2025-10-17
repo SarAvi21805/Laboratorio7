@@ -1,7 +1,7 @@
 package com.example.ejercicioenclase2708.ui.screens
 
 import android.content.Intent
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -51,6 +51,13 @@ import retrofit2.Call
 import retrofit2.Callback
 import retrofit2.Response
 
+// Para descargas
+import android.app.DownloadManager
+import android.content.Context
+import android.net.Uri
+import android.os.Environment
+import androidx.compose.material.icons.filled.Download
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DetailsScreen(navController: NavController, photoId: Long) {
@@ -67,14 +74,23 @@ fun DetailsScreen(navController: NavController, photoId: Long) {
                     if (response.isSuccessful) {
                         response.body()?.let { photoFromNet ->
                             coroutineScope.launch(Dispatchers.IO) {
-                                photoDao.insertPhotos(listOf(photoFromNet.toEntity("detail", 1)))
+                                // Búsqueda de fotos existentes en la base de datos (para encontrar favoritas)
+                                val existingPhoto = photoDao.getPhotoByIdSync(photoId)
+
+                                // Nueva entidad partiendo de los datos de la red
+                                val newEntity = photoFromNet.toEntity("detail", 1)
+
+                                // Asignación de estado favorito (si ya existía)
+                                newEntity.isFavorite = existingPhoto?.isFavorite ?: false
+
+                                photoDao.insertPhotos(listOf(newEntity))
                             }
                         }
                     }
                 }
 
                 override fun onFailure(call: Call<PexelsPhoto>, t: Throwable) {
-                    // Manejar error
+                    // Manejo de error
                 }
             })
         }
@@ -86,12 +102,26 @@ fun DetailsScreen(navController: NavController, photoId: Long) {
                 title = { Text(photo?.alt ?: "Detalles") },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver") // <-- EL USO CORRECTO
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver")
                     }
                 },
                 actions = {
                     photo?.let { p ->
                         IconButton(onClick = {
+                            // Lógica de descarga
+                            val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                            val request = DownloadManager.Request(Uri.parse(p.url))
+                                .setTitle("Imagen de Pexels")
+                                .setDescription("Descargando ${p.alt}")
+                                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                                .setDestinationInExternalPublicDir(Environment.DIRECTORY_PICTURES, "Pexels-${p.id}.jpg")
+                            downloadManager.enqueue(request)
+                        }) {
+                            Icon(Icons.Default.Download, contentDescription = "Descargar")
+                        }
+
+                        IconButton(onClick = {
+
                             val sendIntent = Intent().apply {
                                 action = Intent.ACTION_SEND
                                 putExtra(Intent.EXTRA_TEXT, "¡Mira esta foto de Pexels! ${p.url}")
@@ -113,7 +143,8 @@ fun DetailsScreen(navController: NavController, photoId: Long) {
                     .padding(padding)
                     .padding(16.dp)
                     .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
+                    .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally // Contenido centrado
             ) {
                 AsyncImage(
                     model = p.url,
@@ -125,11 +156,41 @@ fun DetailsScreen(navController: NavController, photoId: Long) {
                     contentScale = ContentScale.Crop
                 )
                 Spacer(Modifier.height(16.dp))
-                Text(p.alt, style = MaterialTheme.typography.headlineSmall)
-                Spacer(Modifier.height(8.dp))
-                Text("Fotógrafo: ${p.photographer}", style = MaterialTheme.typography.titleMedium)
+
+                // Metadatos de la foto
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.Start // Texto alineado a la izquierda
+                ) {
+                    Text(p.alt, style = MaterialTheme.typography.headlineSmall)
+                    Spacer(Modifier.height(8.dp))
+
+                    // Texto clickeable
+                    Text(
+                        text = "Fotógrafo: ${p.photographer}",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.primary, // Indicar que es clickeable
+                        modifier = Modifier.clickable {
+                            // Navegamos a home, pasando el nombre del autor.
+                            navController.navigate("home?authorName=${p.photographer}") {
+                                popUpTo("home") {  // Limpia la pila de navegación para que de home no vaya a detalles
+                                    inclusive = true
+                                }
+                            }
+                        }
+                    )
+                    Spacer(Modifier.height(4.dp))
+
+                    Text(
+                        text = "Dimensiones: ${p.width} x ${p.height} px",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
                 Spacer(Modifier.height(24.dp))
 
+                // Botón de Favoritos
                 Button(
                     onClick = {
                         coroutineScope.launch(Dispatchers.IO) {
