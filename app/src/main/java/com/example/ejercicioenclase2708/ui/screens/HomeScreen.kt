@@ -1,5 +1,6 @@
 package com.example.ejercicioenclase2708.ui.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
@@ -9,26 +10,26 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccountCircle
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.example.ejercicioenclase2708.data.local.AppDatabase
+import com.example.ejercicioenclase2708.data.local.PhotoEntity
 import com.example.ejercicioenclase2708.data.local.RecentSearchEntity
 import com.example.ejercicioenclase2708.data.local.toEntity
 import com.example.ejercicioenclase2708.data.remote.PexelsResponse
 import com.example.ejercicioenclase2708.data.remote.PexelsService
 import com.example.ejercicioenclase2708.ui.components.PhotoCard
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
@@ -39,13 +40,25 @@ import retrofit2.Response
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(navController: NavController) {
-    // Estados
-    var query by rememberSaveable { mutableStateOf("Nature") }
+fun HomeScreen(navController: NavController, authorToFilter: String?) {
+    // Estado
+
+    // authorToFilter hace que el estado se recalcule por si cambiara de alguna forma
+    var filterState by rememberSaveable(authorToFilter, stateSaver = filterStateSaver) {
+        mutableStateOf(
+            authorToFilter?.let { FilterState.ByAuthor(it) } ?: FilterState.None
+        )
+    }
+    // Inicialización de query dependiendo del estado del filtro
+    var query by rememberSaveable(authorToFilter) {
+        mutableStateOf(
+            if (authorToFilter != null) "" else "Nature"
+        )
+    }
+
     var page by rememberSaveable { mutableStateOf(1) }
     var isLoading by rememberSaveable { mutableStateOf(false) }
     var canLoadMore by rememberSaveable { mutableStateOf(true) }
-    var showFavoritesOnly by rememberSaveable { mutableStateOf(false) }
 
     // Lógica de datos
     val context = LocalContext.current
@@ -54,88 +67,134 @@ fun HomeScreen(navController: NavController) {
     val photoDao = remember { db.photoDao() }
     val recentSearchDao = remember { db.recentSearchDao() }
 
-    val photos by remember(showFavoritesOnly, query) {
-        if (showFavoritesOnly) {
-            photoDao.getFavoritePhotos()
-        } else {
-            photoDao.getPhotosByQuery(query.lowercase().trim())
+    // Fuente de datos reactiva
+    // `remember` recalcula el Flow cuando las claves (`filterState`, `query`) cambian.
+    val photosFlow: Flow<List<PhotoEntity>> = remember(filterState, query) {
+        when (val currentFilter = filterState) {
+            is FilterState.ByAuthor -> photoDao.getPhotosByAuthor(currentFilter.authorName)
+            FilterState.FavoritesOnly -> photoDao.getFavoritePhotos()
+            FilterState.None -> photoDao.getPhotosByQuery(query.lowercase().trim())
         }
-    }.collectAsState(initial = emptyList())
-    val recentSearches by recentSearchDao.getRecentSearches().collectAsState(initial = emptyList())
+    }
+    val photos by photosFlow.collectAsState(initial = emptyList())
 
+    val recentSearches by recentSearchDao.getRecentSearches().collectAsState(initial = emptyList())
     val lazyGridState = rememberLazyGridState()
 
-    fun fetchAndPersistPhotos(searchQuery: String, isNewSearch: Boolean) {
+    // Manejo de efectos
+
+    // Aplicación del filtro de autor cuando se recibe como argumento PRUEBA 1
+    /*LaunchedEffect(authorToFilter) {
+        authorToFilter?.let { authorName ->
+            if (authorName.isNotEmpty() && (filterState as? FilterState.ByAuthor)?.authorName != authorName) {
+                // Actualización del estado del filtro Y limpiamos la query
+                filterState = FilterState.ByAuthor(authorName)
+                query = "" // Limpieza de query
+            }
+        }
+    }*/
+
+    fun fetchAndPersistPhotos(searchQuery: String, isNewSearch: Boolean, author: String? = null) {
         if (isLoading) return
         isLoading = true
         val pageToFetch = if (isNewSearch) 1 else page + 1
-        val normalizedQuery = searchQuery.lowercase().trim()
+        val effectiveQuery = author ?: searchQuery // Autor como query sí está, de lo contrario, usa searchQuery
+        val normalizedQuery = effectiveQuery.lowercase().trim()
 
         coroutineScope.launch {
-            if (normalizedQuery.isNotBlank()) {
-                withContext(Dispatchers.IO) {
-                    recentSearchDao.insertSearch(RecentSearchEntity(query = searchQuery))
-                }
+            if (normalizedQuery.isNotBlank() && author == null) { // Guarda búsquedas por texto (no autor)
+                withContext(Dispatchers.IO) { recentSearchDao.insertSearch(RecentSearchEntity(query = searchQuery)) }
             }
         }
 
-        val call = PexelsService.api.searchPhotos(query = searchQuery, page = pageToFetch, perPage = 20)
+        val call = PexelsService.api.searchPhotos(query = effectiveQuery, page = pageToFetch, perPage = 20)
         call.enqueue(object : Callback<PexelsResponse> {
             override fun onResponse(call: Call<PexelsResponse>, response: Response<PexelsResponse>) {
-                isLoading = false
-                if (response.isSuccessful) {
-                    val newPhotosFromNetwork = response.body()?.photos.orEmpty()
-                    canLoadMore = response.body()?.nextPage != null
-                    page = pageToFetch
+                if (!response.isSuccessful) {
+                    isLoading = false; return
+                }
+                val newPhotosFromNetwork = response.body()?.photos.orEmpty()
+                canLoadMore = response.body()?.nextPage != null
+                page = pageToFetch
 
-                    coroutineScope.launch(Dispatchers.IO) {
-                        val networkIds = newPhotosFromNetwork.map { it.id }.toSet()
-                        val existingFavorites = photoDao.getFavoritePhotosByIds(networkIds)
-                        val favoriteIds = existingFavorites.map { it.id }.toSet()
-
-                        val entities = newPhotosFromNetwork.map { photo ->
-                            val entity = photo.toEntity(normalizedQuery, pageToFetch)
-                            if (favoriteIds.contains(entity.id)) {
-                                entity.isFavorite = true
-                            }
-                            entity
-                        }
-
-                        if (isNewSearch) {
-                            photoDao.clearPhotosByQuery(normalizedQuery)
-                        }
-
-                        photoDao.insertPhotos(entities)
+                coroutineScope.launch(Dispatchers.IO) {
+                    val networkIds = newPhotosFromNetwork.map { it.id }.toSet()
+                    val existingFavorites = photoDao.getFavoritePhotosByIds(networkIds)
+                    val favoriteIds = existingFavorites.map { it.id }.toSet()
+                    val entities = newPhotosFromNetwork.map { photo ->
+                        val entity = photo.toEntity(normalizedQuery, pageToFetch)
+                        if (favoriteIds.contains(entity.id)) { entity.isFavorite = true }
+                        entity
                     }
+                    if (isNewSearch) {
+                        photoDao.clearPhotosByQuery(normalizedQuery)
+                    }
+                    photoDao.insertPhotos(entities)
+                    withContext(Dispatchers.Main) { isLoading = false }
                 }
             }
-
-            override fun onFailure(call: Call<PexelsResponse>, t: Throwable) {
-                isLoading = false
-            }
+            override fun onFailure(call: Call<PexelsResponse>, t: Throwable) { isLoading = false }
         })
     }
 
-    LaunchedEffect(query) {
-        snapshotFlow { query }
-            .debounce(500)
-            .distinctUntilChanged()
-            .collect { searchQuery ->
-                if (!showFavoritesOnly) { // Busca en la red si no estamos en modo favoritos
-                    fetchAndPersistPhotos(searchQuery, isNewSearch = true)
+    // Efecto para cambios en el estado del filtro cambia a 'ByAuthor'
+    LaunchedEffect(filterState) {
+        // Captura de estado actual en una variable local inmutable
+        val currentFilter = filterState
+
+        // Comprobación y operación sobre la variable local
+        if (currentFilter is FilterState.ByAuthor) {
+            coroutineScope.launch {
+                // Limpieza de la base de datos en el hilo de IO
+                withContext(Dispatchers.IO) {
+                    photoDao.clearPhotosByQuery(currentFilter.authorName.lowercase().trim())
                 }
+                // Inicialización de la nueva búsqueda
+                fetchAndPersistPhotos(
+                    searchQuery = "", // No se necesita query de texto
+                    isNewSearch = true,
+                    author = currentFilter.authorName // Usamos el nombre del autor para la búsqueda (NO SE LOGRÓ IMPLEMENTAR CORRECTAMENTE)
+                )
             }
+        }
     }
 
-    LaunchedEffect(lazyGridState) {
+    // Efecto para búsquedas con debounce (solo se activa si no hay filtro)
+    LaunchedEffect(query, filterState) {
+        if (filterState == FilterState.None) {
+            snapshotFlow { query }
+                .debounce(500)
+                .distinctUntilChanged()
+                .collect { currentQuery ->
+                    if (currentQuery.isNotEmpty()) {
+                        fetchAndPersistPhotos(currentQuery, isNewSearch = true)
+                    }
+                }
+        }
+    }
+
+    // Efecto para scroll infinito (solo se activa si no hay filtro)
+    LaunchedEffect(lazyGridState, photos.size, filterState) {
         snapshotFlow { lazyGridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
             .collect { lastIndex ->
-                if (lastIndex != null && lastIndex >= photos.size - 5 && !isLoading && canLoadMore && !showFavoritesOnly) {
-                    fetchAndPersistPhotos(query, isNewSearch = false)
+                val isAuthorFilter = filterState is FilterState.ByAuthor
+                val isNoFilter = filterState == FilterState.None
+
+                // Permite scroll infinito en búsqueda normal como en filtro por autor
+                if ((isNoFilter || isAuthorFilter) && lastIndex != null && lastIndex >= photos.size - 5 && !isLoading && canLoadMore) {
+                    val queryToUse = if (isNoFilter) query else ""
+                    val authorToUse = if (isAuthorFilter) (filterState as FilterState.ByAuthor).authorName else null
+
+                    fetchAndPersistPhotos(
+                        searchQuery = queryToUse,
+                        isNewSearch = false, // Para cargar más
+                        author = authorToUse
+                    )
                 }
             }
     }
 
+    // UI
     Scaffold(
         topBar = {
             TopAppBar(
@@ -148,16 +207,19 @@ fun HomeScreen(navController: NavController) {
             )
         }
     ) { padding ->
-        Column(Modifier.padding(padding).fillMaxSize()) {
+        Column(Modifier
+            .padding(padding)
+            .fillMaxSize()) {
             TextField(
-                value = query,
+                value = if (filterState is FilterState.ByAuthor) "" else query,
                 onValueChange = { query = it },
                 label = { Text("Buscar fotos...") },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
-                enabled = !showFavoritesOnly // Desactivar la búsqueda en modo favoritos
+                enabled = filterState == FilterState.None,
+                readOnly = filterState != FilterState.None
             )
 
             Row(
@@ -167,43 +229,66 @@ fun HomeScreen(navController: NavController) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                LazyRow(
-                    modifier = Modifier.weight(1f),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    items(items = recentSearches, key = { it.query }) { search ->
-                        AssistChip(
-                            onClick = { query = search.query },
-                            label = { Text(search.query) },
-                            enabled = !showFavoritesOnly
-                        )
+                if (filterState == FilterState.None) {
+                    LazyRow(modifier = Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(items = recentSearches, key = { it.query }) { search ->
+                            AssistChip(onClick = { query = search.query }, label = { Text(search.query) })
+                        }
                     }
+                } else {
+                    Spacer(modifier = Modifier.weight(1f))
                 }
 
                 FilterChip(
-                    selected = showFavoritesOnly,
-                    onClick = { showFavoritesOnly = !showFavoritesOnly },
+                    selected = filterState == FilterState.FavoritesOnly,
+                    onClick = {
+                        filterState = if (filterState == FilterState.FavoritesOnly) FilterState.None else FilterState.FavoritesOnly
+                    },
                     label = { Text("Favoritos") },
                     leadingIcon = {
                         Icon(
-                            imageVector = if (showFavoritesOnly) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                            imageVector = if (filterState == FilterState.FavoritesOnly) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                             contentDescription = "Favoritos"
                         )
                     }
                 )
             }
 
+            if (filterState is FilterState.ByAuthor) {
+                InputChip(
+                    selected = false,
+                    onClick = { filterState = FilterState.None },
+                    label = { Text("Autor: ${(filterState as FilterState.ByAuthor).authorName}") },
+                    trailingIcon = { Icon(Icons.Default.Close, contentDescription = "Quitar filtro") },
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                )
+            }
+
             when {
                 isLoading && photos.isEmpty() -> {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator()
+                    LazyVerticalGrid(
+                        columns = GridCells.Adaptive(minSize = 128.dp),
+                        contentPadding = PaddingValues(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        items(10) {
+                            Box(modifier = Modifier
+                                .aspectRatio(1f)
+                                .clip(MaterialTheme.shapes.medium)
+                                .background(MaterialTheme.colorScheme.surfaceVariant))
+                        }
                     }
                 }
-                !isLoading && photos.isEmpty() -> {
+                photos.isEmpty() && !isLoading -> {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text(
-                            if(showFavoritesOnly) "No tienes fotos favoritas."
-                            else "No se encontraron fotos para \"$query\"."
+                            when(val state = filterState) {
+                                is FilterState.ByAuthor -> "No hay fotos de '${state.authorName}' en el caché."
+                                FilterState.FavoritesOnly -> "No tienes fotos favoritas."
+                                FilterState.None -> "No se encontraron fotos para \"$query\"."
+                            }
                         )
                     }
                 }
@@ -226,18 +311,14 @@ fun HomeScreen(navController: NavController) {
                                         photoDao.setFavorite(photo.id, !photo.isFavorite)
                                     }
                                 },
-                                modifier = Modifier.clickable {
-                                    navController.navigate("details/${photo.id}")
-                                }
+                                modifier = Modifier.clickable { navController.navigate("details/${photo.id}") }
                             )
                         }
-
                         if (isLoading && photos.isNotEmpty()) {
                             item {
-                                Box(
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .padding(16.dp), contentAlignment = Alignment.Center) {
+                                Box(Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp), contentAlignment = Alignment.Center) {
                                     CircularProgressIndicator()
                                 }
                             }

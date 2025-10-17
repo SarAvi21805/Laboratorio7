@@ -70,6 +70,9 @@ dependencies {
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
+    implementation(libs.androidx.material3)
+    implementation("androidx.compose.material:material-icons-extended:1.6.2")
+
 
     implementation("androidx.navigation:navigation-compose:2.7.7")
 
@@ -77,8 +80,15 @@ dependencies {
     implementation("androidx.room:room-runtime:$room_version")
     implementation("androidx.room:room-ktx:$room_version")
     ksp("androidx.room:room-compiler:$room_version")
+
     // Para pruebas
     androidTestImplementation("androidx.room:room-testing:$room_version")
+
+    // Para simular un servidor web en las pruebas
+    androidTestImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+
+    // Para aserciones más legibles
+    androidTestImplementation("com.google.truth:truth:1.1.3")
 
     implementation("com.squareup.retrofit2:retrofit:2.9.0")
     implementation("com.squareup.retrofit2:converter-moshi:2.9.0")

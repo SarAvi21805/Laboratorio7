@@ -29,4 +29,12 @@ interface PhotoDao {
     // Obtener fotos favoritas
     @Query("SELECT * FROM photos WHERE isFavorite = 1 ORDER BY updatedAt DESC")
     fun getFavoritePhotos(): Flow<List<PhotoEntity>>
+
+    // Obtener fotos por nombre del fotógrafo (autor)
+    @Query("SELECT * FROM photos WHERE photographer = :authorName ORDER BY id DESC")
+    fun getPhotosByAuthor(authorName: String): Flow<List<PhotoEntity>>
+
+    // Para consultar en la base de datos sincronamente
+    @Query("SELECT * FROM photos WHERE id = :id")
+    fun getPhotoByIdSync(id: Long): PhotoEntity?
 }
